@@ -1,0 +1,144 @@
+---
+title: "Упражнение_4"
+author: "Aigunov"
+date: "09 03 2021"
+output: html_document
+---
+
+```{r, echo = FALSE, setup, include = FALSE}
+# загрузка пакетов
+library('MASS')
+library('GGally')       # графики совместного разброса переменных
+library('lmtest')       # тесты остатков регрессионных моделей
+library('FNN')          # алгоритм kNN
+```
+```{r, echo=FALSE}
+# константы
+my.seed <- 12345
+train.percent <- 0.85
+
+# загрузка данных
+data(Boston)
+Boston <- subset(Boston, select = c(crim, zn, rm, chas))
+#Boston[ ]
+
+#преобразуем категориальные переменные в факторы
+
+Boston$chas <- as.factor(Boston$chas)
+
+# обучающая выборка
+set.seed(my.seed)
+inTrain <- sample(seq_along(Boston$crim), 
+                  nrow(Boston) * train.percent)
+df.train <- Boston[inTrain, c(colnames(Boston)[-1], colnames(Boston)[1])]
+df.test <- Boston[-inTrain, -1]
+```
+```{r, echo = FALSE, warning = FALSE}
+# совместный график разброса переменных
+ggp <- ggpairs( df.train, upper = list(combo = 'box'))
+print(ggp, progress = F)
+
+# описательные статистики по переменным
+summary(df.train)
+str(df.train)
+
+# цвета по фактору chas
+ggp <- ggpairs(df.train[, c('crim','chas')], 
+               aes(color = chas), upper = list(combo = 'box'))
+print(ggp, progress = F)
+```
+
+Судя по коробчатой диаграмме, средний уровень преступности ниже там, где река граничит с местностью.
+
+
+```{r, echo=FALSE}
+model.1 <- lm(crim ~ . + chas:zn + chas:rm,
+              data = df.train)
+summary(model.1)
+```
+Исключим совместное влияние zn:chas, т.к. их параметры незначимы.
+
+```{r, echo=FALSE}
+model.2 <- lm(crim ~ . + chas:rm,
+              data = df.train)
+summary(model.2)
+```
+Совместное влияни rm:chas исключаем по аналогичной причине.
+
+```{r, echo=FALSE}
+model.3 <- lm(crim ~ .,
+              data = df.train)
+summary(model.3)
+```
+Параметр chas незначим.
+
+```{r, echo=FALSE}
+model.4 <- lm(crim ~ zn + rm ,
+              data = df.train)
+summary(model.4)
+```
+Все параметры модели оказались значимыми, но низкое значение исправленного коэффициента детерминации говорит о том, что выбранные факторы незначительно влияют на уровень преступности. 
+
+Проверка остатков модели
+```{r, echo=FALSE}
+# тест Бройша-Пагана
+bptest(model.4)
+# статистика Дарбина-Уотсона
+dwtest(model.4)
+# графики остатков
+```
+
+
+```{r, echo=FALSE}
+par(mar = c(4.5, 4.5, 2, 1))
+par(mfrow = c(1, 3))
+plot(model.4, 1)
+plot(model.4, 4)
+plot(model.4, 5)
+par(mfrow = c(1, 1))
+```
+
+Судя по графикам остатки носят зависимый характер. В выборке есть три аномальных значения, которые, однако не выходят за пределы доверительных границ на третьем графике. Остатки не удовлетворяют условиям Гаусса-Маркова.
+
+Сравнение с kNN
+```{r, echo=FALSE}
+# фактические значения y на тестовой выборке
+y.fact <- Boston[-inTrain, ]$crim
+y.model.lm <- predict(model.4, df.test)
+MSE.lm <- sum((y.model.lm - y.fact)^2) / length(y.model.lm)
+
+# kNN требует на вход только числовые переменные
+df.train.num <- as.data.frame(apply(df.train, 2, as.numeric))
+df.test.num <- as.data.frame(apply(df.test, 2, as.numeric))
+
+for (i in 2:50){
+    model.knn <- knn.reg(train = df.train.num[, !(colnames(df.train.num) %in% 'crim')], 
+                     y = df.train.num[, 'crim'], 
+                     test = df.test.num, k = i)
+    y.model.knn <- model.knn$pred
+    if (i == 2){
+        MSE.knn <- sum((y.model.knn - y.fact)^2) / length(y.model.knn)
+    } else {
+        MSE.knn <- c(MSE.knn, 
+                     sum((y.model.knn - y.fact)^2) / length(y.model.knn))
+    }
+}
+
+# график
+par(mar = c(4.5, 4.5, 1, 1))
+# ошибки kNN
+plot(2:50, MSE.knn, type = 'b', col = 'darkgreen',
+     xlab = 'значение k', ylab = 'MSE на тестовой выборке')
+# ошибка регрессии
+lines(2:50, rep(MSE.lm, 49), lwd = 2, col = grey(0.2), lty = 2)
+legend('topright', lty = c(1, 2), pch = c(1, NA), 
+       col = c('darkgreen', grey(0.2)), 
+       legend = c('k ближайших соседа', 'регрессия (все факторы)'), 
+       lwd = rep(2, 2))
+```
+
+
+
+
+
+
