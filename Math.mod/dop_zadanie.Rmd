@@ -1,0 +1,105 @@
+---
+title: "Доп задание"
+author: "Aigunov"
+date: "12 05 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library('ggplot2')
+library('glmnet')
+library('gbm')
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data(mpg)
+mpg <- subset(mpg, select = c(displ, year, cyl, trans, drv, cty, hwy, fl,class))
+mpg$cyl <- as.factor(mpg$cyl)
+mpg$trans <- as.factor(mpg$trans)
+mpg$drv <- as.factor(mpg$drv)
+mpg$fl <- as.factor(mpg$fl)
+mpg$class <- as.factor(mpg$class)
+str(mpg)
+```
+
+
+```{r}
+#1 number
+my.seed <- 1
+set.seed(my.seed)
+default.percent<-0.8
+
+train <- sample(1:nrow(mpg), nrow(mpg)*default.percent)
+DF.train<-mpg[train, colnames(mpg)]
+DF.test<-mpg[-train,colnames(mpg)]
+summary(DF.train)
+summary(DF.test)
+
+```
+# бустинг
+```{r}
+set.seed(my.seed)
+x <- model.matrix(cty ~ ., mpg)[, -1]
+inmpg <- sample(seq_along(mpg$cty),
+nrow(mpg) * default.percent)
+test <- -inmpg
+y <- mpg$cty
+y.test <- DF.train$cty
+
+
+```
+# номер 2
+```{r, echo=FALSE}
+set.seed(my.seed)
+boost.fit <- gbm(cty~ ., data = DF.train,
+distribution = "gaussian",
+n.trees = 100, interaction.depth = 4,
+shrinkage = 0.001)
+# график и таблица относительной важности переменных
+summary(boost.fit)
+
+opt.test <- predict(boost.fit, DF.train, id = 8)
+MSE.test <- round(mean((opt.test - y.test)^2), 2)
+MSE.test
+
+```
+```{r}
+opt.test1 <- predict(boost.fit, DF.train, id = 8)
+MSE.test1 <- round(mean((opt.test - DF.train$cty)^2), 2)
+MSE.test1
+
+```
+
+
+```{r}
+#Лассо
+grid <- 10^seq(10, -2, length = 100)
+lasso.mod <- glmnet(x[train, ], y[train], alpha = 1, lambda = grid)
+plot(lasso.mod)
+#Подбор оптимального значения лямбда с помощью перекрёстной проверки
+set.seed(my.seed)
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 1)
+plot(cv.out)
+
+```
+```{r}
+# MSE на тестовой для этого значения лямбды
+bestlam <- cv.out$lambda.min
+lasso.pred <- predict(lasso.mod, s = bestlam, newx = x[train, ])
+MSE.test2 <- round(mean((lasso.pred - y.test)^2), 3)
+
+```
+```{r}
+# коэффициенты лучшей модели
+out <- glmnet(x, y, alpha = 1, lambda = grid)
+lasso.coef <- predict(out, type = 'coefficients',
+s = bestlam)[1:12, ]
+round(lasso.coef, 3)
+round(lasso.coef[lasso.coef != 0], 3)
+```
+
+
+
+
+
